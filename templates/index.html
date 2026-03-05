@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SGM Drivers — Fleet Management</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,300&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body>
+
+<!-- TOASTS -->
+<div class="toast-container" id="toastContainer"></div>
+
+<!-- SIDEBAR -->
+<aside class="sidebar" id="sidebar">
+  <div class="sidebar-logo">
+    <div class="logo-mark">
+      <div class="logo-icon">🚛</div>
+      <div class="logo-text">SGM DRIVERS</div>
+    </div>
+    <div class="logo-sub">Fleet Management · UK</div>
+  </div>
+  <nav class="sidebar-nav">
+    <div class="nav-section">
+      <div class="nav-label">Main</div>
+      <div class="nav-item active" onclick="navigate('dashboard',this)" id="nav-dashboard">
+        <span class="nav-icon">📊</span> Dashboard
+      </div>
+      <div class="nav-item" onclick="navigate('drivers',this)" id="nav-drivers">
+        <span class="nav-icon">👥</span> Drivers
+      </div>
+    </div>
+    <div class="nav-section">
+      <div class="nav-label">Compliance</div>
+      <div class="nav-item" onclick="navigate('licences',this)" id="nav-licences">
+        <span class="nav-icon">🪪</span> Licences
+        <span class="nav-badge" id="badge-licences" style="display:none">0</span>
+      </div>
+      <div class="nav-item" onclick="navigate('training',this)" id="nav-training">
+        <span class="nav-icon">🎓</span> Training &amp; CPC
+      </div>
+      <div class="nav-item" onclick="navigate('documents',this)" id="nav-documents">
+        <span class="nav-icon">📁</span> Documents
+      </div>
+    </div>
+    <div class="nav-section">
+      <div class="nav-label">HR &amp; Finance</div>
+      <div class="nav-item" onclick="navigate('contracts',this)" id="nav-contracts">
+        <span class="nav-icon">📋</span> Contracts
+      </div>
+      <div class="nav-item" onclick="navigate('payments',this)" id="nav-payments">
+        <span class="nav-icon">💷</span> Payments
+      </div>
+    </div>
+    <div class="nav-section">
+      <div class="nav-label">Admin</div>
+      <div class="nav-item" onclick="navigate('reports',this)" id="nav-reports">
+        <span class="nav-icon">📈</span> Reports &amp; Export
+      </div>
+      <div class="nav-item" onclick="navigate('users',this)" id="nav-users" {% if user.role != 'admin' %}style="display:none"{% endif %}>
+        <span class="nav-icon">🔑</span> Users
+      </div>
+    </div>
+  </nav>
+  <div class="sidebar-footer">
+    <div class="user-card">
+      <div class="user-avatar">{{ user.username[:2].upper() }}</div>
+      <div>
+        <div class="user-name">{{ user.username }}</div>
+        <div class="user-role">{{ user.role | capitalize }}</div>
+      </div>
+      <a href="/logout" class="logout-btn" title="Logout">⬅</a>
+    </div>
+  </div>
+</aside>
+
+<!-- MAIN -->
+<main class="main">
+  <header class="topbar">
+    <button class="menu-toggle" onclick="toggleSidebar()">☰</button>
+    <div class="topbar-title" id="topbarTitle">Dashboard</div>
+    <div class="topbar-spacer"></div>
+    <div class="topbar-badge">🇬🇧 UK Compliant</div>
+    <div class="topbar-alert" id="alertBadge" onclick="navigate('dashboard',null)">⚠️ <span id="alertCount">0</span> Alerts</div>
+  </header>
+
+  <div class="content">
+
+    <!-- ===== DASHBOARD ===== -->
+    <section class="page active" id="page-dashboard">
+      <div class="page-header">
+        <div><div class="page-title">Overview</div><div class="page-desc">Fleet status — live from database</div></div>
+        <div class="page-actions">
+          <button class="btn btn-outline btn-sm" onclick="exportData('drivers')">⬇ Export CSV</button>
+          <button class="btn btn-primary" onclick="openModal('driver')">+ Add Driver</button>
+        </div>
+      </div>
+      <div class="stats-grid" id="statsGrid">
+        <div class="stat-card yellow skeleton"><div class="stat-label">Active Drivers</div><div class="stat-value" id="stat-drivers">—</div><div class="stat-sub">Loading...</div><div class="stat-icon">🚛</div></div>
+        <div class="stat-card red skeleton"><div class="stat-label">Expiring Licences</div><div class="stat-value" id="stat-licences">—</div><div class="stat-sub">Within 30 days</div><div class="stat-icon">🪪</div></div>
+        <div class="stat-card blue skeleton"><div class="stat-label">CPC Hours Logged</div><div class="stat-value" id="stat-cpc">—</div><div class="stat-sub">This training cycle</div><div class="stat-icon">🎓</div></div>
+        <div class="stat-card green skeleton"><div class="stat-label">Payroll Total</div><div class="stat-value" id="stat-payroll">—</div><div class="stat-sub">Gross pay on record</div><div class="stat-icon">💷</div></div>
+      </div>
+      <div class="charts-grid">
+        <div class="card">
+          <div class="card-header"><div><div class="card-title">Licence Status — Last 6 Months</div><div class="card-sub">LGV · PCV · Car/Van fleet overview</div></div></div>
+          <div class="card-body"><div class="chart-wrap"><canvas id="licenceChart"></canvas></div></div>
+        </div>
+        <div class="card">
+          <div class="card-header"><div><div class="card-title">⚠️ Alerts &amp; Notices</div><div class="card-sub">Action required immediately</div></div></div>
+          <div class="card-body" style="padding:12px;"><div id="alertsList" class="alerts-list"><div class="loading-pulse">Loading alerts...</div></div></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header"><div><div class="card-title">Recent Drivers</div><div class="card-sub">Latest records</div></div><button class="btn btn-ghost btn-sm" onclick="navigate('drivers',null)">View all →</button></div>
+        <div class="table-wrap"><table><thead><tr><th>Driver</th><th>Licence</th><th>Contract</th><th>CPC Progress</th><th>Expiry</th><th>Status</th></tr></thead><tbody id="dashTable"><tr><td colspan="6" class="loading-pulse" style="text-align:center;padding:24px;">Loading...</td></tr></tbody></table></div>
+      </div>
+    </section>
+
+    <!-- ===== DRIVERS ===== -->
+    <section class="page" id="page-drivers">
+      <div class="page-header">
+        <div><div class="page-title">Drivers</div><div class="page-desc">All driver records — CRUD management</div></div>
+        <div class="page-actions">
+          <button class="btn btn-outline btn-sm" onclick="exportData('drivers')">⬇ CSV</button>
+          <button class="btn btn-primary" onclick="openModal('driver')">+ Add Driver</button>
+        </div>
+      </div>
+      <div class="search-bar">
+        <div class="input-wrap"><span>🔍</span><input type="text" placeholder="Search by name, email, ID..." oninput="loadDrivers(this.value)"></div>
+        <select class="filter-select" onchange="loadDrivers('',this.value)" id="driverStatusFilter">
+          <option value="">All Status</option><option>Active</option><option>Inactive</option><option>Suspended</option>
+        </select>
+      </div>
+      <div class="card">
+        <div class="table-wrap"><table>
+          <thead><tr><th>ID</th><th>Driver</th><th>Licence</th><th>Contract</th><th>Salary</th><th>Start Date</th><th>Status</th><th>Actions</th></tr></thead>
+          <tbody id="driversTable"><tr><td colspan="8" class="loading-pulse" style="text-align:center;padding:24px;">Loading...</td></tr></tbody>
+        </table></div>
+      </div>
+    </section>
+
+    <!-- ===== LICENCES ===== -->
+    <section class="page" id="page-licences">
+      <div class="page-header">
+        <div><div class="page-title">Licences</div><div class="page-desc">DVLA licence tracking — LGV, PCV, Car/Van</div></div>
+        <div class="page-actions">
+          <button class="btn btn-outline btn-sm" onclick="exportData('licences')">⬇ CSV</button>
+          <button class="btn btn-primary" onclick="openModal('licence')">+ Add Licence</button>
+        </div>
+      </div>
+      <div class="info-grid" id="licenceInfoGrid">
+        <div class="info-item"><div class="info-item-label">Total</div><div class="info-item-value" id="lic-total">—</div></div>
+        <div class="info-item"><div class="info-item-label">Expiring ≤30d</div><div class="info-item-value" style="color:var(--red)" id="lic-expiring">—</div></div>
+        <div class="info-item"><div class="info-item-label">Valid</div><div class="info-item-value" style="color:var(--green)" id="lic-valid">—</div></div>
+      </div>
+      <div class="card">
+        <div class="table-wrap"><table>
+          <thead><tr><th>Driver</th><th>Type</th><th>Licence No.</th><th>Categories</th><th>Issue Date</th><th>Expiry</th><th>Days Left</th><th>Status</th><th>Actions</th></tr></thead>
+          <tbody id="licencesTable"></tbody>
+        </table></div>
+      </div>
+    </section>
+
+    <!-- ===== TRAINING ===== -->
+    <section class="page" id="page-training">
+      <div class="page-header">
+        <div><div class="page-title">Training &amp; CPC</div><div class="page-desc">Driver CPC periodic training — 35 hours per 5-year cycle</div></div>
+        <div class="page-actions">
+          <button class="btn btn-outline btn-sm" onclick="exportData('training')">⬇ CSV</button>
+          <button class="btn btn-primary" onclick="openModal('training')">+ Log Training</button>
+        </div>
+      </div>
+      <div class="info-grid">
+        <div class="info-item"><div class="info-item-label">CPC Compliant</div><div class="info-item-value" id="train-compliant">—</div></div>
+        <div class="info-item"><div class="info-item-label">Total Hours</div><div class="info-item-value" id="train-hours">—</div></div>
+        <div class="info-item"><div class="info-item-label">Overdue</div><div class="info-item-value" style="color:var(--red)" id="train-overdue">—</div></div>
+      </div>
+      <div class="card">
+        <div class="table-wrap"><table>
+          <thead><tr><th>Driver</th><th>Course</th><th>Provider</th><th>Date</th><th>Hours</th><th>CPC Total</th><th>Status</th><th>Actions</th></tr></thead>
+          <tbody id="trainingTable"></tbody>
+        </table></div>
+      </div>
+    </section>
+
+    <!-- ===== CONTRACTS ===== -->
+    <section class="page" id="page-contracts">
+      <div class="page-header">
+        <div><div class="page-title">Contracts</div><div class="page-desc">Employment contracts — Full-time, Part-time, Temporary, Agency</div></div>
+        <div class="page-actions">
+          <button class="btn btn-outline btn-sm" onclick="exportData('contracts')">⬇ CSV</button>
+          <button class="btn btn-primary" onclick="openModal('contract')">+ New Contract</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="table-wrap"><table>
+          <thead><tr><th>Driver</th><th>Type</th><th>Start</th><th>End</th><th>Salary p/a</th><th>Notice</th><th>Holiday</th><th>Status</th><th>Actions</th></tr></thead>
+          <tbody id="contractsTable"></tbody>
+        </table></div>
+      </div>
+    </section>
+
+    <!-- ===== PAYMENTS ===== -->
+    <section class="page" id="page-payments">
+      <div class="page-header">
+        <div><div class="page-title">Payments</div><div class="page-desc">Payroll, PAYE, National Insurance — HMRC compliant records</div></div>
+        <div class="page-actions">
+          <button class="btn btn-outline btn-sm" onclick="exportData('payments')">⬇ CSV</button>
+          <button class="btn btn-primary" onclick="openModal('payment')">+ Log Payment</button>
+        </div>
+      </div>
+      <div class="info-grid">
+        <div class="info-item"><div class="info-item-label">Total Gross</div><div class="info-item-value" id="pay-gross">—</div></div>
+        <div class="info-item"><div class="info-item-label">Total Net</div><div class="info-item-value" id="pay-net">—</div></div>
+        <div class="info-item"><div class="info-item-label">Pending</div><div class="info-item-value" style="color:var(--orange)" id="pay-pending">—</div></div>
+      </div>
+      <div class="card">
+        <div class="table-wrap"><table>
+          <thead><tr><th>Driver</th><th>Period</th><th>Gross</th><th>PAYE Tax</th><th>Employee NI</th><th>Employer NI</th><th>Net Pay</th><th>Method</th><th>Status</th><th>Actions</th></tr></thead>
+          <tbody id="paymentsTable"></tbody>
+        </table></div>
+      </div>
+    </section>
+
+    <!-- ===== DOCUMENTS ===== -->
+    <section class="page" id="page-documents">
+      <div class="page-header">
+        <div><div class="page-title">Documents</div><div class="page-desc">Secure archive — licences, DBS, CPC cards, tachograph, passports</div></div>
+        <div class="page-actions">
+          <button class="btn btn-primary" onclick="openModal('document')">⬆ Upload Document</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="table-wrap"><table>
+          <thead><tr><th>Driver</th><th>Type</th><th>Reference</th><th>Upload Date</th><th>Expiry</th><th>Status</th><th>Actions</th></tr></thead>
+          <tbody id="documentsTable"></tbody>
+        </table></div>
+      </div>
+    </section>
+
+    <!-- ===== REPORTS ===== -->
+    <section class="page" id="page-reports">
+      <div class="page-header">
+        <div><div class="page-title">Reports &amp; Export</div><div class="page-desc">Generate and download compliance, HR and financial reports</div></div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:24px;">
+        <div class="report-card" onclick="exportData('drivers')"><div class="report-icon">👥</div><div class="report-title">Driver Roster</div><div class="report-desc">All drivers, personal info, status</div><button class="btn btn-outline btn-sm">⬇ Export CSV</button></div>
+        <div class="report-card" onclick="exportData('licences')"><div class="report-icon">🪪</div><div class="report-title">Licence Status Report</div><div class="report-desc">Expiry dates, categories, status</div><button class="btn btn-outline btn-sm">⬇ Export CSV</button></div>
+        <div class="report-card" onclick="exportData('training')"><div class="report-icon">🎓</div><div class="report-title">CPC Compliance</div><div class="report-desc">Training hours, certificates</div><button class="btn btn-outline btn-sm">⬇ Export CSV</button></div>
+        <div class="report-card" onclick="exportData('payments')"><div class="report-icon">💷</div><div class="report-title">Payroll Summary</div><div class="report-desc">PAYE, NI, gross/net breakdown</div><button class="btn btn-outline btn-sm">⬇ Export CSV</button></div>
+        <div class="report-card" onclick="exportData('contracts')"><div class="report-icon">📋</div><div class="report-title">Contract Overview</div><div class="report-desc">Contract types, dates, salaries</div><button class="btn btn-outline btn-sm">⬇ Export CSV</button></div>
+        <div class="report-card" onclick="showToast('🏛️','HMRC RTI','Preparing Real Time Information export...','blue')"><div class="report-icon">🏛️</div><div class="report-title">HMRC RTI Summary</div><div class="report-desc">Real Time Information for HMRC</div><button class="btn btn-outline btn-sm">⬇ Export CSV</button></div>
+      </div>
+      <div class="card">
+        <div class="card-header"><div><div class="card-title">Database Statistics</div><div class="card-sub">Live counts from SQLite database</div></div></div>
+        <div class="card-body" id="dbStats" style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;"></div>
+      </div>
+    </section>
+
+    <!-- ===== USERS ===== -->
+    <section class="page" id="page-users">
+      <div class="page-header">
+        <div><div class="page-title">User Management</div><div class="page-desc">System access control — Admin only</div></div>
+        <div class="page-actions"><button class="btn btn-primary" onclick="openModal('user')">+ Add User</button></div>
+      </div>
+      <div class="card">
+        <div class="table-wrap"><table>
+          <thead><tr><th>Username</th><th>Email</th><th>Role</th><th>Created</th><th>Actions</th></tr></thead>
+          <tbody id="usersTable"></tbody>
+        </table></div>
+      </div>
+    </section>
+
+  </div><!-- /content -->
+</main>
+
+<!-- ============================= MODALS ============================= -->
+
+<!-- DRIVER MODAL -->
+<div class="modal-overlay" id="modal-driver">
+  <div class="modal">
+    <div class="modal-header"><div class="modal-title" id="driverModalTitle">➕ Add Driver</div><div class="modal-close" onclick="closeModal('driver')">×</div></div>
+    <div class="modal-body">
+      <input type="hidden" id="driverEditId">
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">First Name *</label><input class="form-input" id="d_first_name" placeholder="James"></div>
+        <div class="form-group"><label class="form-label">Last Name *</label><input class="form-input" id="d_last_name" placeholder="Holden"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Date of Birth</label><input class="form-input" type="date" id="d_dob"></div>
+        <div class="form-group"><label class="form-label">NI Number</label><input class="form-input" id="d_ni" placeholder="AB 12 34 56 C"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Email</label><input class="form-input" type="email" id="d_email" placeholder="driver@company.co.uk"></div>
+        <div class="form-group"><label class="form-label">Phone</label><input class="form-input" id="d_phone" placeholder="+44 7700 900000"></div>
+      </div>
+      <div class="form-row full">
+        <div class="form-group"><label class="form-label">Address</label><input class="form-input" id="d_address" placeholder="Full UK address"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Nationality</label><input class="form-input" id="d_nationality" placeholder="British" value="British"></div>
+        <div class="form-group"><label class="form-label">Licence Type</label>
+          <select class="form-input" id="d_licence_type">
+            <option>LGV</option><option>LGV Class C+E</option><option>PCV</option><option>Car</option><option>Van</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Contract Type</label>
+          <select class="form-input" id="d_contract_type">
+            <option>Full-time</option><option>Part-time</option><option>Temporary</option><option>Agency</option><option>Zero-hours</option>
+          </select>
+        </div>
+        <div class="form-group"><label class="form-label">Annual Salary (£)</label><input class="form-input" type="number" id="d_salary" placeholder="32000"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Start Date</label><input class="form-input" type="date" id="d_start"></div>
+        <div class="form-group"><label class="form-label">Status</label>
+          <select class="form-input" id="d_status"><option>Active</option><option>Inactive</option><option>Suspended</option></select>
+        </div>
+      </div>
+      <div class="form-row full">
+        <div class="form-group"><label class="form-label">Notes</label><textarea class="form-input" id="d_notes" rows="2" placeholder="Additional notes..."></textarea></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('driver')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveDriver()">✅ Save Driver</button>
+    </div>
+  </div>
+</div>
+
+<!-- LICENCE MODAL -->
+<div class="modal-overlay" id="modal-licence">
+  <div class="modal">
+    <div class="modal-header"><div class="modal-title">🪪 Add / Edit Licence</div><div class="modal-close" onclick="closeModal('licence')">×</div></div>
+    <div class="modal-body">
+      <input type="hidden" id="licenceEditId">
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Driver *</label><select class="form-input" id="l_driver_id"></select></div>
+        <div class="form-group"><label class="form-label">Licence Type *</label>
+          <select class="form-input" id="l_licence_type">
+            <option>LGV Class C</option><option>LGV Class C+E</option><option>PCV</option><option>Car (B)</option><option>Van (B1)</option><option>Motorcycle (A)</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Licence Number</label><input class="form-input" id="l_number" placeholder="DVLA number"></div>
+        <div class="form-group"><label class="form-label">Categories</label><input class="form-input" id="l_categories" placeholder="B, C, C+E"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Issue Date</label><input class="form-input" type="date" id="l_issue"></div>
+        <div class="form-group"><label class="form-label">Expiry Date *</label><input class="form-input" type="date" id="l_expiry"></div>
+      </div>
+      <div class="form-row full">
+        <div class="form-group"><label class="form-label">Issuing Authority</label><input class="form-input" id="l_authority" value="DVLA"></div>
+      </div>
+      <div class="form-row full">
+        <div class="form-group"><label class="form-label">Notes</label><textarea class="form-input" id="l_notes" rows="2"></textarea></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('licence')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveLicence()">✅ Save Licence</button>
+    </div>
+  </div>
+</div>
+
+<!-- TRAINING MODAL -->
+<div class="modal-overlay" id="modal-training">
+  <div class="modal">
+    <div class="modal-header"><div class="modal-title">🎓 Log Training</div><div class="modal-close" onclick="closeModal('training')">×</div></div>
+    <div class="modal-body">
+      <input type="hidden" id="trainingEditId">
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Driver *</label><select class="form-input" id="t_driver_id"></select></div>
+        <div class="form-group"><label class="form-label">Course Type *</label>
+          <select class="form-input" id="t_course_type">
+            <option>CPC Periodic Training</option><option>Manual Handling</option><option>Fire Safety</option>
+            <option>ADR Dangerous Goods</option><option>Tachograph Use</option><option>First Aid</option><option>Health &amp; Safety</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Provider</label><input class="form-input" id="t_provider" placeholder="Training provider"></div>
+        <div class="form-group"><label class="form-label">Certificate Number</label><input class="form-input" id="t_cert" placeholder="JAUPT reference"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Start Date</label><input class="form-input" type="date" id="t_start"></div>
+        <div class="form-group"><label class="form-label">Completion Date</label><input class="form-input" type="date" id="t_completion"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Hours Completed</label><input class="form-input" type="number" id="t_hours" placeholder="7" step="0.5"></div>
+        <div class="form-group"><label class="form-label">Status</label>
+          <select class="form-input" id="t_status"><option>Completed</option><option>In Progress</option><option>Scheduled</option><option>Overdue</option></select>
+        </div>
+      </div>
+      <div class="form-row full">
+        <div class="form-group"><label class="form-label">Notes</label><textarea class="form-input" id="t_notes" rows="2"></textarea></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('training')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveTraining()">✅ Save Training</button>
+    </div>
+  </div>
+</div>
+
+<!-- CONTRACT MODAL -->
+<div class="modal-overlay" id="modal-contract">
+  <div class="modal">
+    <div class="modal-header"><div class="modal-title">📋 New Contract</div><div class="modal-close" onclick="closeModal('contract')">×</div></div>
+    <div class="modal-body">
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Driver *</label><select class="form-input" id="c_driver_id"></select></div>
+        <div class="form-group"><label class="form-label">Contract Type *</label>
+          <select class="form-input" id="c_type">
+            <option>Full-time</option><option>Part-time</option><option>Temporary</option><option>Agency</option><option>Zero-hours</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Start Date *</label><input class="form-input" type="date" id="c_start"></div>
+        <div class="form-group"><label class="form-label">End Date (leave blank if permanent)</label><input class="form-input" type="date" id="c_end"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Annual Salary (£)</label><input class="form-input" type="number" id="c_salary" placeholder="32000"></div>
+        <div class="form-group"><label class="form-label">Hourly Rate (£) — if applicable</label><input class="form-input" type="number" id="c_hourly" placeholder="15.50" step="0.01"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Notice Period</label>
+          <select class="form-input" id="c_notice"><option>1 Week</option><option>2 Weeks</option><option>1 Month</option><option>3 Months</option></select>
+        </div>
+        <div class="form-group"><label class="form-label">Holiday Entitlement (days)</label><input class="form-input" type="number" id="c_holiday" value="28"></div>
+      </div>
+      <div class="form-row full">
+        <div class="form-group"><label class="form-label">Notes</label><textarea class="form-input" id="c_notes" rows="2"></textarea></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('contract')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveContract()">✅ Save Contract</button>
+    </div>
+  </div>
+</div>
+
+<!-- PAYMENT MODAL -->
+<div class="modal-overlay" id="modal-payment">
+  <div class="modal">
+    <div class="modal-header"><div class="modal-title">💷 Log Payment</div><div class="modal-close" onclick="closeModal('payment')">×</div></div>
+    <div class="modal-body">
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Driver *</label><select class="form-input" id="p_driver_id"></select></div>
+        <div class="form-group"><label class="form-label">Pay Period</label><input class="form-input" id="p_period" placeholder="July 2024"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Gross Pay (£) *</label><input class="form-input" type="number" id="p_gross" placeholder="2833.33" step="0.01" oninput="calcNet()"></div>
+        <div class="form-group"><label class="form-label">PAYE Tax (£)</label><input class="form-input" type="number" id="p_paye" placeholder="424.00" step="0.01" oninput="calcNet()"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Employee NI (£)</label><input class="form-input" type="number" id="p_eni" placeholder="213.00" step="0.01" oninput="calcNet()"></div>
+        <div class="form-group"><label class="form-label">Pension (£)</label><input class="form-input" type="number" id="p_pension" placeholder="85.00" step="0.01" oninput="calcNet()"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Net Pay (£) — auto calculated</label><input class="form-input" id="p_net" readonly style="background:var(--bg);font-weight:700;color:var(--green);"></div>
+        <div class="form-group"><label class="form-label">Payment Method</label>
+          <select class="form-input" id="p_method"><option>BACS</option><option>Faster Payments</option><option>Cheque</option><option>Cash</option></select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Payment Date</label><input class="form-input" type="date" id="p_date"></div>
+        <div class="form-group"><label class="form-label">Status</label>
+          <select class="form-input" id="p_status"><option>Paid</option><option>Pending</option><option>Failed</option></select>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('payment')">Cancel</button>
+      <button class="btn btn-primary" onclick="savePayment()">✅ Save Payment</button>
+    </div>
+  </div>
+</div>
+
+<!-- DOCUMENT MODAL -->
+<div class="modal-overlay" id="modal-document">
+  <div class="modal">
+    <div class="modal-header"><div class="modal-title">📁 Upload Document</div><div class="modal-close" onclick="closeModal('document')">×</div></div>
+    <div class="modal-body">
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Driver *</label><select class="form-input" id="doc_driver_id"></select></div>
+        <div class="form-group"><label class="form-label">Document Type *</label>
+          <select class="form-input" id="doc_type">
+            <option>DVLA Licence</option><option>CPC Card</option><option>DBS Certificate</option><option>Tachograph Card</option>
+            <option>Passport</option><option>Right to Work</option><option>P45</option><option>P60</option><option>Contract Copy</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Reference Number</label><input class="form-input" id="doc_ref" placeholder="Document reference"></div>
+        <div class="form-group"><label class="form-label">Expiry Date</label><input class="form-input" type="date" id="doc_expiry"></div>
+      </div>
+      <div class="form-row full">
+        <div class="form-group"><label class="form-label">Upload File (PDF / JPG / PNG)</label><input class="form-input" type="file" id="doc_file" accept=".pdf,.jpg,.jpeg,.png"><div style="font-size:11px;color:var(--text3);margin-top:4px;">Max 16MB. Files stored securely on server.</div></div>
+      </div>
+      <div class="form-row full">
+        <div class="form-group"><label class="form-label">Notes</label><textarea class="form-input" id="doc_notes" rows="2"></textarea></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('document')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveDocument()">⬆ Save Document</button>
+    </div>
+  </div>
+</div>
+
+<!-- USER MODAL -->
+<div class="modal-overlay" id="modal-user">
+  <div class="modal" style="max-width:440px;">
+    <div class="modal-header"><div class="modal-title" id="userModalTitle">🔑 Add User</div><div class="modal-close" onclick="closeModal('user')">×</div></div>
+    <div class="modal-body">
+      <input type="hidden" id="userEditId">
+      <div class="form-row full"><div class="form-group"><label class="form-label">Username *</label><input class="form-input" id="u_username" placeholder="username"></div></div>
+      <div class="form-row full"><div class="form-group"><label class="form-label">Email *</label><input class="form-input" type="email" id="u_email" placeholder="user@sgm.co.uk"></div></div>
+      <div class="form-row full"><div class="form-group"><label class="form-label">Password</label><input class="form-input" type="password" id="u_password" placeholder="Leave blank to keep current"></div></div>
+      <div class="form-row full"><div class="form-group"><label class="form-label">Role</label>
+        <select class="form-input" id="u_role"><option value="hr">HR</option><option value="admin">Admin</option><option value="driver">Driver (read-only)</option></select>
+      </div></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('user')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveUser()">✅ Save User</button>
+    </div>
+  </div>
+</div>
+
+<!-- DELETE CONFIRM -->
+<div class="modal-overlay" id="modal-confirm">
+  <div class="modal" style="max-width:400px;">
+    <div class="modal-header"><div class="modal-title">🗑️ Confirm Delete</div><div class="modal-close" onclick="closeModal('confirm')">×</div></div>
+    <div class="modal-body"><p id="confirmMsg" style="color:var(--text2);font-size:14px;line-height:1.6;"></p></div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('confirm')">Cancel</button>
+      <button class="btn btn-danger" id="confirmBtn">🗑️ Delete</button>
+    </div>
+  </div>
+</div>
+
+<link rel="stylesheet" href="/static/css/app.css">
+<script src="/static/js/app.js"></script>
+</body>
+</html>
